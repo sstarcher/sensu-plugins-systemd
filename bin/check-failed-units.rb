@@ -27,32 +27,35 @@ require 'sensu-plugin/check/cli'
 require 'systemd'
 
 class CheckFailedUnits < Sensu::Plugin::Check::CLI
-    option :ignoremasked,
-          description: 'Ignore Masked Units',
-          short: '-m',
-          default: false
+  option :ignoremasked,
+         description: 'Ignore Masked Units',
+         short: '-m',
+         default: false
 
-    def run
-      cli = CheckFailedUnits.new
-      begin
-        systemd = Systemd::SystemdManager.new
-      rescue
-        unknown 'Can not connect to systemd'
-      end
-      failed_units = ""
-      systemd.units.each do |unit|
-        if unit.name.include?(".service") and unit.active_state.include?("failed")
-          if cli.config[:ignoremasked] and unit.load_state.include?("masked")
-            next
-          else
-            failed_units += unit.name+","
-          end
-        end
-      end
-      if failed_units.empty?
-        ok 'No failed service units'
-      else
-        critical "Found failed service units: #{failed_units}"
-      end
+  option :ignore,
+         description: 'Ignore Units',
+         short: '-i',
+         long: '--ignore SERVICE',
+         proc: proc { |d| d.split(',') }
+
+  def run
+    begin
+      systemd = Systemd::SystemdManager.new
+    rescue
+      unknown 'Can not connect to systemd'
     end
+
+    failed_units = ''
+    systemd.units.each do |unit|
+      next unless unit.name.include?('.service') && unit.active_state.include?('failed')
+      next if config[:ignoremasked] && unit.load_state.include?('masked')
+      next if config[:ignore] && config[:ignore].include?(unit.name)
+      failed_units += unit.name + ','
+    end
+    if failed_units.empty?
+      ok 'No failed service units'
+    else
+      critical "Found failed service units: #{failed_units}"
+    end
+  end
 end
